@@ -1,4 +1,4 @@
-# Mem0 vs Zep: Memory System Comparison (another one)
+# Mem0 vs Zep: Memory System Comparison (you need to work this time)
 
 This document compares how Mem0 and Zep approach conversational memory storage and retrieval for evaluation purposes.
 
