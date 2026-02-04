@@ -16,7 +16,7 @@ load_dotenv()  # Load environment variables from .env file (API keys, org ID, pr
 
 
 class MemorySearch:  # Class to handle searching memories and answering questions based on retrieved context
-    def __init__(self, output_path="results.json", top_k=10, filter_memories=False, is_graph=False):  # Initialize with output path, number of memories to retrieve, filtering option, and graph mode
+    def __init__(self, output_path="results.json", top_k=10, filters=None, is_graph=False, category=None):  # Use filters dict for filtering
         """
         Initializes the MemorySearch system for retrieving memories and answering questions.
         Sets up both Mem0 and OpenAI clients to search memories and generate answers respectively.
@@ -33,8 +33,9 @@ class MemorySearch:  # Class to handle searching memories and answering question
         self.openai_client = OpenAI()  # Create OpenAI client to generate answers using LLM based on retrieved memories
         self.results = defaultdict(list)  # Initialize results dictionary that auto-creates empty lists for new conversation indices
         self.output_path = output_path  # Store path where results will be saved (default: results.json)
-        self.filter_memories = filter_memories  # Store whether to apply additional filtering to retrieved memories
+        self.filters = filters if filters is not None else {}  # Store filters dict for search
         self.is_graph = is_graph  # Store whether to use graph-based memory retrieval (enables relationship context)
+        self.category = category  # Store category filter (None means all categories, 1-5 for specific category)
 
         if self.is_graph:  # Check if graph mode is enabled
             self.ANSWER_PROMPT = ANSWER_PROMPT_GRAPH  # Use graph-specific prompt template that includes relationship information
@@ -53,53 +54,65 @@ class MemorySearch:  # Class to handle searching memories and answering question
         retries = 0  # Initialize retry counter to track how many attempts have been made
         while retries < max_retries:  # Loop until max retry attempts are exhausted
             try:  # Attempt to search memories, catching any exceptions
-                if self.is_graph:  # Check if graph-based memory retrieval is enabled
-                    print("Searching with graph")  # Log that graph search is being used for debugging
-                    memories = self.mem0_client.search(  # Call Mem0 API with graph-enabled search parameters
-                        query,  # The search query text to find relevant memories
-                        user_id=user_id,  # The user ID to scope the search to this user's memories
-                        top_k=self.top_k,  # Number of most relevant memories to retrieve
-                        filter_memories=self.filter_memories,  # Whether to apply additional filtering criteria
-                        enable_graph=True,  # Enable graph-based retrieval to include relationship context
-                        output_format="v1.1",  # Use v1.1 format which includes both memories and relations
+                if self.is_graph:
+                    # print(f"[BOB IS DEBUG] Searching with graph for user_id={user_id}, query='{query}', filters={self.filters}")
+                    memories = self.mem0_client.search(
+                        query,
+                        user_id=user_id,
+                        top_k=self.top_k,
+                        filters=self.filters,
+                        enable_graph=True,
+                        output_format="v1.1",
                     )
-                else:  # If standard semantic search mode
-                    memories = self.mem0_client.search(  # Call Mem0 API with standard search parameters
-                        query, user_id=user_id, top_k=self.top_k, filter_memories=self.filter_memories  # Query text, user scope, top-k limit, and filtering option
+                else:
+                    debug_filters = {"user_id": user_id}
+                    # print(f"[BOB IS DEBUG] Non-graph search for user_id={user_id}, query='{query}', filters={debug_filters}")
+                    memories = self.mem0_client.search(
+                        query,
+                        user_id=user_id,
+                        top_k=self.top_k,
+                        filters=debug_filters,
                     )
-                break  # If search succeeds, exit the retry loop
-            except Exception as e:  # If an error occurs during the search
-                print("Retrying...")  # Log that we're retrying the search
-                retries += 1  # Increment the retry counter
-                if retries >= max_retries:  # Check if we've exhausted all retry attempts
-                    raise e  # Re-raise the exception to propagate the error up
-                time.sleep(retry_delay)  # Wait 1 second before retrying to avoid overwhelming the API
+                # print(f"[BOB IS DEBUG] Memories returned: {memories}")
+                break
+            except Exception as e:
+                # print(f"[BOB IS DEBUG] Exception during search_memory: {e}")
+                print("Retrying...")
+                retries += 1
+                if retries >= max_retries:
+                    raise e
+                time.sleep(retry_delay)
 
         end_time = time.time()  # Record the end time to calculate total search duration
-        if not self.is_graph:  # Check if we're using standard semantic search (not graph mode)
-            semantic_memories = [  # Extract and format semantic memories from the search results
-                {  # Create a dictionary for each memory with relevant fields
-                    "memory": memory["memory"],  # The actual memory text content
-                    "timestamp": memory["metadata"]["timestamp"],  # When this memory was created (from metadata)
-                    "score": round(memory["score"], 2),  # Relevance score rounded to 2 decimal places
+        if not self.is_graph:
+            # Handle both list and dict API responses
+            if isinstance(memories, dict) and "results" in memories:
+                memory_list = memories["results"]
+            else:
+                memory_list = memories
+            semantic_memories = [
+                {
+                    "memory": memory["memory"],
+                    "timestamp": memory["metadata"]["timestamp"],
+                    "score": round(memory["score"], 2),
                 }
-                for memory in memories  # Iterate through all returned memories
+                for memory in memory_list
             ]
-            graph_memories = None  # Set graph memories to None since graph mode is disabled
-        else:  # If graph mode is enabled
-            semantic_memories = [  # Extract and format semantic memories from the results section
-                {  # Create a dictionary for each memory with relevant fields
-                    "memory": memory["memory"],  # The actual memory text content
-                    "timestamp": memory["metadata"]["timestamp"],  # When this memory was created (from metadata)
-                    "score": round(memory["score"], 2),  # Relevance score rounded to 2 decimal places
+            graph_memories = None
+        else:
+            semantic_memories = [
+                {
+                    "memory": memory["memory"],
+                    "timestamp": memory["metadata"]["timestamp"],
+                    "score": round(memory["score"], 2),
                 }
-                for memory in memories["results"]  # Iterate through memories in the results field (v1.1 format)
+                for memory in memories["results"]
             ]
-            graph_memories = [  # Extract and format graph relationships from the relations section
-                {"source": relation["source"], "relationship": relation["relationship"], "target": relation["target"]}  # Create triplet showing source entity, relationship type, and target entity
-                for relation in memories["relations"]  # Iterate through all relationship triplets returned
+            graph_memories = [
+                {"source": relation["source"], "relationship": relation["relationship"], "target": relation["target"]}
+                for relation in memories["relations"]
             ]
-        return semantic_memories, graph_memories, end_time - start_time  # Return formatted memories, graph relations (or None), and search duration
+        return semantic_memories, graph_memories, end_time - start_time
 
     def answer_question(self, speaker_1_user_id, speaker_2_user_id, question, answer, category):  # Method to answer a question using memories from both speakers in a conversation
         """
@@ -196,7 +209,7 @@ class MemorySearch:  # Class to handle searching memories and answering question
 
         return result  # Return the result dictionary for this question
 
-    def process_data_file(self, file_path):  # Method to process an entire evaluation data file sequentially
+    def process_data_file(self, file_path, max_conversations=None):  # Method to process an entire evaluation data file sequentially, with optional limit
         """
         Processes all conversations and questions from an evaluation data file sequentially.
         Loads the JSON file containing multiple conversations, each with associated Q&A pairs.
@@ -206,6 +219,8 @@ class MemorySearch:  # Class to handle searching memories and answering question
         """
         with open(file_path, "r") as f:  # Open the evaluation data file in read mode using context manager
             data = json.load(f)  # Parse the JSON file into a Python data structure
+        if max_conversations is not None:
+            data = data[:max_conversations]
 
         for idx, item in tqdm(enumerate(data), total=len(data), desc="Processing conversations"):  # Loop through all conversations with progress bar
             qa = item["qa"]  # Extract the list of question-answer pairs for this conversation
@@ -219,6 +234,10 @@ class MemorySearch:  # Class to handle searching memories and answering question
             for question_item in tqdm(  # Loop through all questions for this conversation with nested progress bar
                 qa, total=len(qa), desc=f"Processing questions for conversation {idx}", leave=False  # Show question progress, don't leave bar after completion
             ):
+                # Skip questions that don't match the category filter (if specified)
+                if self.category is not None and question_item.get("category") != self.category:
+                    continue  # Skip this question if it doesn't match the requested category
+                
                 result = self.process_question(question_item, speaker_a_user_id, speaker_b_user_id)  # Process the question and get the result dictionary
                 self.results[idx].append(result)  # Add the result to the list for this conversation index
 

@@ -43,7 +43,7 @@ Generate personal memories that follow these guidelines:  # Instructions for the
 
 
 class MemoryADD:  # Class to handle adding memories to Mem0 from conversation data
-    def __init__(self, data_path=None, batch_size=2, is_graph=False):  # Initialize with optional data path, batch size for processing, and graph mode flag
+    def __init__(self, data_path=None, batch_size=1, is_graph=False):  # BOB CHANGE BATCH SIZE HERE
         """
         Initializes the MemoryADD system by setting up the Mem0 client and configuration.
         This constructor establishes the connection to Mem0 API using credentials from environment variables,
@@ -58,7 +58,7 @@ class MemoryADD:  # Class to handle adding memories to Mem0 from conversation da
         )
 
         self.mem0_client.update_project(custom_instructions=custom_instructions)  # Update the project with custom instructions to guide memory extraction
-        self.batch_size = batch_size  # Store batch size - how many messages to process together (default: 2)
+        self.batch_size = batch_size  # Store batch size - how many messages to process together 
         self.data_path = data_path  # Store the path to the conversation data JSON file
         self.data = None  # Initialize data as None, will be loaded later if path is provided
         self.is_graph = is_graph  # Store whether to use graph-based memory storage (enables relationship tracking)
@@ -92,12 +92,12 @@ class MemoryADD:  # Class to handle adding memories to Mem0 from conversation da
                 return  # If successful, exit the method immediately
             except Exception as e:  # If an error occurs during the API call
                 if attempt < retries - 1:  # Check if we have more retry attempts remaining
-                    time.sleep(1)  # Wait 1 second before retrying to avoid overwhelming the API
+                    time.sleep(5)  # Wait 5 seconds before retrying to avoid overwhelming the API
                     continue  # Skip to the next retry attempt
                 else:  # If this was the last retry attempt
                     raise e  # Re-raise the exception to propagate the error up
 
-    def add_memories_for_speaker(self, speaker, messages, timestamp, desc):  # Method to add all memories for a specific speaker in batches
+    def add_memories_for_speaker(self, speaker, messages, timestamp, desc):  # Method to add all memories for a specific speaker in batches, with delay
         """
         Processes and adds all messages for a single speaker in configurable batches with progress tracking.
         Batching is crucial for efficiency - instead of making individual API calls for each message,
@@ -106,8 +106,9 @@ class MemoryADD:  # Class to handle adding memories to Mem0 from conversation da
         All messages in a batch share the same timestamp metadata to maintain temporal context.
         """
         for i in tqdm(range(0, len(messages), self.batch_size), desc=desc):  # Loop through messages in batch_size increments with progress bar
-            batch_messages = messages[i : i + self.batch_size]  # Extract a batch of messages (e.g., messages 0-2, then 2-4, etc.)
+            batch_messages = messages[i : i + self.batch_size]  # Extract a batch of messages (e.g., messages 0-1, then 1-2, etc.)
             self.add_memory(speaker, batch_messages, metadata={"timestamp": timestamp})  # Add the batch of messages for this speaker with timestamp metadata
+            time.sleep(2)  # BOB SLEEP TIME
 
     def process_conversation(self, item, idx):  # Method to process a single conversation between two speakers
         """
@@ -165,7 +166,7 @@ class MemoryADD:  # Class to handle adding memories to Mem0 from conversation da
 
         print("Messages added successfully")  # Print confirmation message after all conversation segments are processed
 
-    def process_all_conversations(self, max_workers=10):  # Method to process all conversations using parallel execution (default: 10 workers)
+    def process_all_conversations(self, max_workers=15): #BOB CHANGE HERE
         """
         Orchestrates parallel processing of all conversations using a thread pool for maximum efficiency.
         The ThreadPoolExecutor manages up to 10 concurrent conversation processing tasks by default,

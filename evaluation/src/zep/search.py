@@ -7,12 +7,51 @@ from collections import defaultdict  # Import defaultdict to automatically creat
 from dotenv import load_dotenv  # Import function to load environment variables from .env file
 from jinja2 import Template  # Import Template for rendering prompts with search context
 from openai import OpenAI  # Import OpenAI client to generate answers using LLM
-from prompts import ANSWER_PROMPT_ZEP  # Import Zep-specific prompt template for answer generation
+# from prompts import ANSWER_PROMPT_ZEP  # Import Zep-specific prompt template for answer generation
 from tqdm import tqdm  # Import tqdm for displaying progress bars during processing
 from zep_cloud import EntityEdge, EntityNode  # Import Zep types for graph entities and relationships
 from zep_cloud.client import Zep  # Import Zep client to search graph-based memories
 
 load_dotenv()  # Load environment variables from .env file (ZEP_API_KEY, MODEL)
+
+ANSWER_PROMPT_ZEP = """
+    You are an intelligent memory assistant tasked with retrieving accurate information from conversation memories.
+
+    # CONTEXT:
+    You have access to memories from a conversation. These memories contain
+    timestamped information that may be relevant to answering the question.
+
+    # INSTRUCTIONS:
+    1. Carefully analyze all provided memories
+    2. Pay special attention to the timestamps to determine the answer
+    3. If the question asks about a specific event or fact, look for direct evidence in the memories
+    4. If the memories contain contradictory information, prioritize the most recent memory
+    5. If there is a question about time references (like "last year", "two months ago", etc.), 
+       calculate the actual date based on the memory timestamp. For example, if a memory from 
+       4 May 2022 mentions "went to India last year," then the trip occurred in 2021.
+    6. Always convert relative time references to specific dates, months, or years. For example, 
+       convert "last year" to "2022" or "two months ago" to "March 2023" based on the memory 
+       timestamp. Ignore the reference while answering the question.
+    7. Focus only on the content of the memories. Do not confuse character 
+       names mentioned in memories with the actual users who created those memories.
+    8. The answer should be less than 5-6 words.
+
+    # APPROACH (Think step by step):
+    1. First, examine all memories that contain information related to the question
+    2. Examine the timestamps and content of these memories carefully
+    3. Look for explicit mentions of dates, times, locations, or events that answer the question
+    4. If the answer requires calculation (e.g., converting relative time references), show your work
+    5. Formulate a precise, concise answer based solely on the evidence in the memories
+    6. Double-check that your answer directly addresses the question asked
+    7. Ensure your final answer is specific and avoids vague time references
+
+    Memories:
+
+    {{memories}}
+
+    Question: {{question}}
+    Answer:
+    """
 
 TEMPLATE = """  # Template string for formatting Zep's graph search results into readable context
 FACTS and ENTITIES represent relevant context to the current conversation.  # Explanation of what the formatted data represents
@@ -180,4 +219,4 @@ if __name__ == "__main__":  # Execute this block only when script is run directl
     parser.add_argument("--run_id", type=str, required=True)  # Define required run_id argument to identify this experimental run
     args = parser.parse_args()  # Parse command-line arguments
     zep_search = ZepSearch()  # Create ZepSearch instance
-    zep_search.process_data_file("../../dataset/locomo10.json", args.run_id, "results/zep_search_results.json")  # Process dataset and save results to JSON file
+    zep_search.process_data_file("/Users/namita.achyuthan/Documents/opening-up-mem0/evaluation/dataset/locomo10.json", args.run_id, "results/zep_search_results.json")  # Process dataset and save results to JSON file

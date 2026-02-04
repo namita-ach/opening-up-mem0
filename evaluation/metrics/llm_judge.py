@@ -1,11 +1,15 @@
 import argparse
 import json
+import time
 from collections import defaultdict
 
 import numpy as np
 from openai import OpenAI
 
 from mem0.memory.utils import extract_json
+from dotenv import load_dotenv
+
+load_dotenv()
 
 client = OpenAI()
 
@@ -36,23 +40,42 @@ Just return the label CORRECT or WRONG in a json format with the key as "label".
 """
 
 
-def evaluate_llm_judge(question, gold_answer, generated_answer):
-    """Evaluate the generated answer against the gold answer using an LLM judge."""
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {
-                "role": "user",
-                "content": ACCURACY_PROMPT.format(
-                    question=question, gold_answer=gold_answer, generated_answer=generated_answer
-                ),
-            }
-        ],
-        response_format={"type": "json_object"},
-        temperature=0.0,
-    )
-    label = json.loads(extract_json(response.choices[0].message.content))["label"]
-    return 1 if label == "CORRECT" else 0
+def evaluate_llm_judge(question, gold_answer, generated_answer, max_retries=5):
+    """Evaluate the generated answer against the gold answer using an LLM judge with exponential backoff."""
+    for attempt in range(max_retries):
+        try:
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {
+                        "role": "user",
+                        "content": ACCURACY_PROMPT.format(
+                            question=question, gold_answer=gold_answer, generated_answer=generated_answer
+                        ),
+                    }
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.0,
+            )
+            # Add base delay to prevent rate limiting on success
+            time.sleep(0.5)
+            label = json.loads(extract_json(response.choices[0].message.content))["label"]
+            return 1 if label == "CORRECT" else 0
+            
+        except Exception as e:
+            # Check if it's a rate limit error (429)
+            is_rate_limit = "429" in str(e) or "rate" in str(e).lower()
+            
+            if attempt < max_retries - 1:
+                # Exponential backoff: 1s, 2s, 4s, 8s, 16s
+                wait_time = 2 ** attempt
+                print(f"{'Rate limit' if is_rate_limit else 'Error'} on attempt {attempt + 1}/{max_retries}. "
+                      f"Retrying in {wait_time}s... ({str(e)[:100]})")
+                time.sleep(wait_time)
+                continue
+            else:
+                print(f"Failed after {max_retries} attempts: {e}")
+                raise e
 
 
 def main():

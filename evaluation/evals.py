@@ -27,6 +27,11 @@ def process_item(item_data):
         bleu_scores = calculate_bleu_scores(pred_answer, gt_answer)
         llm_score = evaluate_llm_judge(question, gt_answer, pred_answer)
 
+        # Extract latency metrics if available
+        search_time = item.get("search_time", 0.0)
+        response_time = item.get("response_time", 0.0)
+        total_latency = search_time + response_time
+
         local_results[k].append(
             {
                 "question": question,
@@ -36,6 +41,9 @@ def process_item(item_data):
                 "bleu_score": bleu_scores["bleu1"],
                 "f1_score": metrics["f1"],
                 "llm_score": llm_score,
+                "search_time": search_time,
+                "response_time": response_time,
+                "total_latency": total_latency,
             }
         )
 
@@ -50,7 +58,7 @@ def main():
     parser.add_argument(
         "--output_file", type=str, default="evaluation_metrics.json", help="Path to save the evaluation results"
     )
-    parser.add_argument("--max_workers", type=int, default=10, help="Maximum number of worker threads")
+    parser.add_argument("--max_workers", type=int, default=3, help="Maximum number of worker threads (default: 3 to avoid rate limits)")
 
     args = parser.parse_args()
 
