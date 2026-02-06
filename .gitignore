@@ -1,3 +1,5 @@
+# Ignore the Notes directory
+Notes/
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -187,5 +189,3 @@ eval/
 qdrant_storage/
 .crossnote
 testing.ipynb
-
-Notes
